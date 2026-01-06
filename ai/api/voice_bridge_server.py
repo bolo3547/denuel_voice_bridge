@@ -1,0 +1,587 @@
+"""
+DENUEL VOICE BRIDGE - Web API Server
+=====================================
+REST API for the voice bridge system.
+
+Endpoints:
+    POST /process-audio    - Process audio and return clear speech
+    POST /process-text     - Process text and return clear speech
+    GET  /phrase-memory    - Get phrase memory
+    POST /phrase-memory    - Update phrase memory
+    GET  /health           - Health check
+
+Run:
+    python ai/api/voice_bridge_server.py
+"""
+
+import os
+import sys
+import json
+import base64
+import tempfile
+import wave
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+from io import BytesIO
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from flask import Flask, request, jsonify, send_file
+    from flask_cors import CORS
+except ImportError:
+    print("Missing dependencies. Installing...")
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "flask", "flask-cors"])
+    from flask import Flask, request, jsonify, send_file
+    from flask_cors import CORS
+
+import numpy as np
+
+# Import the voice bridge
+from ai.pipelines.denuel_voice_bridge import (
+    DenuelVoiceBridge,
+    PhraseMemory,
+    PHRASE_MEMORY_PATH
+)
+
+# =============================================================================
+# FLASK APP
+# =============================================================================
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for Flutter web
+
+# Global bridge instance (lazy loaded)
+_bridge: Optional[DenuelVoiceBridge] = None
+_phrase_memory: Optional[PhraseMemory] = None
+
+
+def get_bridge() -> DenuelVoiceBridge:
+    """Get or create the voice bridge instance."""
+    global _bridge
+    if _bridge is None:
+        print("🌉 Initializing DENUEL VOICE BRIDGE...")
+        _bridge = DenuelVoiceBridge()
+    return _bridge
+
+
+def get_phrase_memory() -> PhraseMemory:
+    """Get or create the phrase memory instance."""
+    global _phrase_memory
+    if _phrase_memory is None:
+        _phrase_memory = PhraseMemory()
+    return _phrase_memory
+
+
+# =============================================================================
+# ENDPOINTS
+# =============================================================================
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint."""
+    global _bridge
+    return jsonify({
+        "status": "ok",
+        "service": "DENUEL VOICE BRIDGE",
+        "version": "1.0.0",
+        "models_loaded": _bridge is not None,
+        "ready": _bridge is not None
+    })
+
+
+@app.route('/warmup', methods=['POST'])
+def warmup():
+    """
+    Pre-load AI models to speed up first request.
+    Call this when app starts to avoid delay on first recording.
+    """
+    try:
+        print("🔥 Warming up models...")
+        bridge = get_bridge()
+        
+        # The bridge constructor already loads models
+        # Just verify they're ready
+        models_ready = bridge is not None
+        
+        return jsonify({
+            "success": True,
+            "message": "Models loaded and ready",
+            "models_ready": models_ready
+        })
+    except Exception as e:
+        print(f"Warmup error: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/process-text', methods=['POST'])
+def process_text():
+    """
+    Process text and return clear speech audio.
+    
+    Request:
+        {
+            "text": "Hello world"
+        }
+    
+    Response:
+        {
+            "success": true,
+            "original_text": "Hello world",
+            "normalized_text": "Hello world",
+            "audio_base64": "base64-encoded-wav-audio",
+            "audio_format": "wav"
+        }
+    """
+    try:
+        data = request.get_json()
+        text = data.get('text', '').strip()
+        
+        if not text:
+            return jsonify({"success": False, "error": "No text provided"}), 400
+        
+        bridge = get_bridge()
+        
+        # Apply phrase memory corrections
+        phrase_corrected = bridge.phrase_memory.apply_corrections(text)
+        
+        # Apply word-level normalization
+        normalized = bridge.normalizer.normalize(phrase_corrected)
+        
+        # Generate clear speech
+        audio = bridge.generate_clear_speech(text, save=False)
+        
+        if audio is None:
+            return jsonify({"success": False, "error": "Failed to generate audio"}), 500
+        
+        # Convert to WAV bytes
+        audio_bytes = audio_to_wav_bytes(audio)
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        
+        return jsonify({
+            "success": True,
+            "original_text": text,
+            "normalized_text": normalized,
+            "audio_base64": audio_base64,
+            "audio_format": "wav"
+        })
+    
+    except Exception as e:
+        print(f"Error in process_text: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/process-audio', methods=['POST'])
+def process_audio():
+    """
+    Process audio and return clear speech.
+    
+    Request:
+        {
+            "audio_base64": "base64-encoded-audio",
+            "audio_format": "webm" | "wav"
+        }
+    
+    Response:
+        {
+            "success": true,
+            "recognized_text": "What was heard",
+            "normalized_text": "Corrected version",
+            "audio_base64": "base64-encoded-wav-audio",
+            "audio_format": "wav"
+        }
+    """
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify({"success": False, "error": "Invalid JSON body"}), 400
+            
+        audio_base64 = data.get('audio_base64', '')
+        audio_format = data.get('audio_format', 'webm')
+        
+        if not audio_base64:
+            return jsonify({"success": False, "error": "No audio provided"}), 400
+        
+        print(f"📥 Received audio: format={audio_format}, base64_length={len(audio_base64)}")
+        
+        # Decode audio
+        try:
+            audio_bytes = base64.b64decode(audio_base64)
+            print(f"📦 Decoded {len(audio_bytes)} bytes of audio data")
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Invalid base64 audio: {e}"}), 400
+        
+        # Convert to numpy array
+        audio_array = decode_audio(audio_bytes, audio_format)
+        
+        if audio_array is None or len(audio_array) == 0:
+            return jsonify({"success": False, "error": f"Failed to decode {audio_format} audio. Make sure ffmpeg is installed."}), 400
+        
+        print(f"🎵 Decoded audio: {len(audio_array)} samples")
+        
+        bridge = get_bridge()
+        
+        # Clean the audio
+        clean_audio = bridge.clean_audio(audio_array)
+        
+        # Transcribe
+        recognized_text = bridge.understand(clean_audio)
+        
+        if not recognized_text:
+            return jsonify({
+                "success": True,
+                "recognized_text": "",
+                "normalized_text": "",
+                "audio_base64": "",
+                "message": "No speech detected"
+            })
+        
+        # Generate clear speech
+        output_audio = bridge.generate_clear_speech(recognized_text, save=False)
+        
+        if output_audio is None:
+            return jsonify({"success": False, "error": "Failed to generate audio"}), 500
+        
+        # Convert to WAV bytes
+        audio_bytes = audio_to_wav_bytes(output_audio)
+        audio_base64_out = base64.b64encode(audio_bytes).decode('utf-8')
+        
+        return jsonify({
+            "success": True,
+            "recognized_text": recognized_text,
+            "normalized_text": bridge.last_output_text,
+            "audio_base64": audio_base64_out,
+            "audio_format": "wav"
+        })
+    
+    except Exception as e:
+        print(f"Error in process_audio: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/phrase-memory', methods=['GET'])
+def get_phrase_memory_endpoint():
+    """Get current phrase memory."""
+    try:
+        pm = get_phrase_memory()
+        return jsonify({
+            "success": True,
+            "user_name": pm.user_name,
+            "known_names": pm.known_names,
+            "phrase_corrections": pm.phrase_corrections,
+            "frequent_phrases": pm.frequent_phrases
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/phrase-memory', methods=['POST'])
+def update_phrase_memory():
+    """
+    Update phrase memory.
+    
+    Request:
+        {
+            "action": "set_name" | "add_name" | "add_phrase",
+            "heard": "what was heard",
+            "correct": "correct version"
+        }
+    """
+    try:
+        data = request.get_json()
+        action = data.get('action', '')
+        
+        pm = get_phrase_memory()
+        bridge = get_bridge()
+        
+        if action == 'set_name':
+            name = data.get('name', '')
+            if name:
+                pm.set_user_name(name)
+                bridge.phrase_memory = pm
+                return jsonify({"success": True, "message": f"Name set to: {name}"})
+        
+        elif action == 'add_name':
+            heard = data.get('heard', '')
+            correct = data.get('correct', '')
+            if heard and correct:
+                pm.add_name(heard, correct)
+                bridge.phrase_memory = pm
+                return jsonify({"success": True, "message": f"Name learned: {heard} → {correct}"})
+        
+        elif action == 'add_phrase':
+            heard = data.get('heard', '')
+            correct = data.get('correct', '')
+            if heard and correct:
+                pm.add_phrase_correction(heard, correct)
+                bridge.phrase_memory = pm
+                return jsonify({"success": True, "message": f"Phrase learned: {heard} → {correct}"})
+        
+        elif action == 'add_pronunciation':
+            # Add a pronunciation correction to the normalizer
+            heard = data.get('heard', '')
+            correct = data.get('correct', '')
+            if heard and correct:
+                bridge.normalizer.learn_correction(heard, correct)
+                return jsonify({"success": True, "message": f"Pronunciation learned: {heard} → {correct}"})
+        
+        return jsonify({"success": False, "error": "Invalid action or missing data"}), 400
+    
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/voice-samples', methods=['GET'])
+def get_voice_samples():
+    """List available voice samples."""
+    try:
+        bridge = get_bridge()
+        samples = []
+        
+        raw_dir = PROJECT_ROOT / "data" / "voice_profile_raw"
+        clean_dir = PROJECT_ROOT / "data" / "voice_profile_clean"
+        
+        for dir_path in [raw_dir, clean_dir]:
+            if dir_path.exists():
+                for f in dir_path.glob("*.wav"):
+                    if f.stat().st_size > 1000:
+                        samples.append({
+                            "name": f.name,
+                            "path": str(f),
+                            "size_kb": f.stat().st_size / 1024
+                        })
+        
+        current = bridge._get_voice_sample()
+        
+        return jsonify({
+            "success": True,
+            "samples": samples,
+            "current_sample": current
+        })
+    
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# =============================================================================
+# AUDIO UTILITIES
+# =============================================================================
+
+def audio_to_wav_bytes(audio: np.ndarray, sample_rate: int = 22050) -> bytes:
+    """Convert numpy audio array to WAV bytes."""
+    buffer = BytesIO()
+    
+    # Normalize and convert to int16
+    audio_normalized = np.clip(audio, -1.0, 1.0)
+    audio_int = (audio_normalized * 32767).astype(np.int16)
+    
+    with wave.open(buffer, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(audio_int.tobytes())
+    
+    buffer.seek(0)
+    return buffer.read()
+
+
+def decode_audio(audio_bytes: bytes, audio_format: str) -> Optional[np.ndarray]:
+    """Decode audio bytes to numpy array."""
+    try:
+        if audio_format == 'wav':
+            return decode_wav(audio_bytes)
+        elif audio_format in ['webm', 'ogg', 'mp3']:
+            return decode_with_ffmpeg(audio_bytes, audio_format)
+        else:
+            # Try WAV first, then ffmpeg
+            try:
+                return decode_wav(audio_bytes)
+            except:
+                return decode_with_ffmpeg(audio_bytes, audio_format)
+    except Exception as e:
+        print(f"Error decoding audio: {e}")
+        return None
+
+
+def decode_wav(audio_bytes: bytes) -> np.ndarray:
+    """Decode WAV bytes to numpy array."""
+    buffer = BytesIO(audio_bytes)
+    with wave.open(buffer, 'rb') as wf:
+        frames = wf.readframes(wf.getnframes())
+        audio = np.frombuffer(frames, dtype=np.int16)
+        audio = audio.astype(np.float32) / 32767.0
+        
+        # Resample to 16kHz if needed
+        sample_rate = wf.getframerate()
+        if sample_rate != 16000:
+            from scipy.signal import resample
+            audio = resample(audio, int(len(audio) * 16000 / sample_rate))
+        
+        return audio
+
+
+def decode_with_pydub(audio_bytes: bytes, audio_format: str) -> Optional[np.ndarray]:
+    """Decode audio using pydub (requires ffmpeg or libav)."""
+    try:
+        from pydub import AudioSegment
+        
+        # Write to temp file
+        with tempfile.NamedTemporaryFile(suffix=f'.{audio_format}', delete=False) as f:
+            f.write(audio_bytes)
+            input_path = f.name
+        
+        try:
+            # Load with pydub
+            audio_segment = AudioSegment.from_file(input_path, format=audio_format)
+            
+            # Convert to 16kHz mono
+            audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
+            
+            # Get raw samples
+            samples = np.array(audio_segment.get_array_of_samples())
+            audio = samples.astype(np.float32) / 32767.0
+            
+            os.unlink(input_path)
+            return audio
+        except Exception as e:
+            print(f"pydub decode error: {e}")
+            os.unlink(input_path)
+            return None
+            
+    except ImportError:
+        print("pydub not installed")
+        return None
+    except Exception as e:
+        print(f"pydub error: {e}")
+        return None
+
+
+def decode_with_scipy(audio_bytes: bytes, audio_format: str) -> Optional[np.ndarray]:
+    """Try to decode using scipy.io.wavfile."""
+    try:
+        from scipy.io import wavfile
+        from scipy.signal import resample
+        
+        # Write to temp file
+        with tempfile.NamedTemporaryFile(suffix=f'.{audio_format}', delete=False) as f:
+            f.write(audio_bytes)
+            input_path = f.name
+        
+        try:
+            sample_rate, audio = wavfile.read(input_path)
+            audio = audio.astype(np.float32) / 32767.0
+            
+            # Handle stereo
+            if len(audio.shape) > 1:
+                audio = audio.mean(axis=1)
+            
+            # Resample to 16kHz
+            if sample_rate != 16000:
+                audio = resample(audio, int(len(audio) * 16000 / sample_rate))
+            
+            os.unlink(input_path)
+            return audio
+        except:
+            os.unlink(input_path)
+            return None
+            
+    except Exception as e:
+        return None
+
+
+def decode_with_ffmpeg(audio_bytes: bytes, audio_format: str) -> Optional[np.ndarray]:
+    """Decode audio using ffmpeg."""
+    try:
+        import subprocess
+        import shutil
+        
+        # Check common ffmpeg locations on Windows
+        ffmpeg_path = shutil.which('ffmpeg')
+        if ffmpeg_path is None:
+            # Check common installation paths
+            common_paths = [
+                r'C:\ffmpeg\bin\ffmpeg.exe',
+                r'C:\Program Files\ffmpeg\bin\ffmpeg.exe',
+                r'C:\Program Files (x86)\ffmpeg\bin\ffmpeg.exe',
+                os.path.expanduser(r'~\ffmpeg\bin\ffmpeg.exe'),
+                os.path.expanduser(r'~\scoop\apps\ffmpeg\current\bin\ffmpeg.exe'),
+            ]
+            for path in common_paths:
+                if os.path.exists(path):
+                    ffmpeg_path = path
+                    break
+        
+        if ffmpeg_path is None:
+            print("❌ ffmpeg not found! Trying pydub fallback...")
+            return decode_with_pydub(audio_bytes, audio_format)
+        
+        # Write to temp file
+        with tempfile.NamedTemporaryFile(suffix=f'.{audio_format}', delete=False) as f:
+            f.write(audio_bytes)
+            input_path = f.name
+        
+        output_path = input_path + '.wav'
+        
+        # Convert with ffmpeg
+        result = subprocess.run([
+            ffmpeg_path, '-y', '-i', input_path,
+            '-ar', '16000', '-ac', '1', '-f', 'wav',
+            output_path
+        ], capture_output=True)
+        
+        if result.returncode != 0:
+            print(f"ffmpeg error: {result.stderr.decode()}")
+            os.unlink(input_path)
+            # Try pydub as fallback
+            return decode_with_pydub(audio_bytes, audio_format)
+        
+        # Read the WAV file
+        with open(output_path, 'rb') as f:
+            wav_bytes = f.read()
+        
+        # Clean up
+        os.unlink(input_path)
+        os.unlink(output_path)
+        
+        return decode_wav(wav_bytes)
+    
+    except Exception as e:
+        print(f"ffmpeg decode error: {e}")
+        return decode_with_pydub(audio_bytes, audio_format)
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+def main():
+    """Run the server."""
+    print("\n" + "="*60)
+    print("🌉 DENUEL VOICE BRIDGE - Web API Server")
+    print("="*60)
+    print("\nEndpoints:")
+    print("   POST /process-text     - Process text to speech")
+    print("   POST /process-audio    - Process audio recording")
+    print("   GET  /phrase-memory    - Get phrase memory")
+    print("   POST /phrase-memory    - Update phrase memory")
+    print("   GET  /voice-samples    - List voice samples")
+    print("   GET  /health           - Health check")
+    print("\n" + "="*60)
+    print("Server starting on http://localhost:5000")
+    print("="*60 + "\n")
+    
+    # Pre-load models in background (optional)
+    # get_bridge()
+    
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True, use_reloader=False)
+
+
+if __name__ == '__main__':
+    main()

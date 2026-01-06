@@ -1,0 +1,81 @@
+# =============================================================================
+# DENUEL VOICE BRIDGE - Git Ignore
+# =============================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+.installed.cfg
+*.egg
+
+# AI Models (large files - download separately)
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+ai/stt/whisper/models/
+ai/tts/xtts/models/
+ai/tts/xtts/XTTS-v2/
+
+# Audio data (personal voice samples)
+data/voice_profile_raw/
+data/voice_profile_clean/
+data/embeddings/
+*.wav
+*.mp3
+*.webm
+*.ogg
+*.flac
+
+# Output files
+output/
+temp/
+*.tmp
+
+# Flutter / Dart
+app/mobile/denuel_voice_bridge/.dart_tool/
+app/mobile/denuel_voice_bridge/.packages
+app/mobile/denuel_voice_bridge/build/
+app/mobile/denuel_voice_bridge/.flutter-plugins
+app/mobile/denuel_voice_bridge/.flutter-plugins-dependencies
+app/mobile/denuel_voice_bridge/pubspec.lock
+*.iml
+.idea/
+
+# IDE
+.vscode/
+*.code-workspace
+.vs/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Phrase memory (user-specific)
+phrase_memory.json
+
+# Temporary files
+*.bak
+*.swp
+*~
