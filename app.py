@@ -47,9 +47,9 @@ try:
     for route in full_app.routes:
         if hasattr(route, 'path') and route.path not in ['/', '/health', '/docs', '/openapi.json', '/redoc']:
             app.routes.append(route)
-    print("✅ Full API loaded successfully")
+    print("Full API loaded successfully")
 except ImportError as e:
-    print(f"⚠️ Running in minimal mode: {e}")
+    print("Running in minimal mode:", e)
     
     @app.get("/status")
     async def status():

@@ -41,7 +41,7 @@ try:
     from fastapi.responses import StreamingResponse, JSONResponse
     from pydantic import BaseModel
 except ImportError:
-    print("❌ FastAPI not installed. Run: pip install fastapi uvicorn python-multipart")
+    print("FastAPI not installed. Run: pip install fastapi uvicorn python-multipart")
     sys.exit(1)
 
 # Import pipeline components
@@ -51,7 +51,7 @@ try:
     from ai.utils.voice_analyzer import VoiceAnalyzer
     from ai.utils.voice_profile_manager import VoiceProfileManager
 except ImportError as e:
-    print(f"⚠️  Import error: {e}")
+    print(f"Import error: {e}")
     print("Make sure you're running from project root")
 
 
