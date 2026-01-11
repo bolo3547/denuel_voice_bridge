@@ -1,0 +1,564 @@
+{
+  "info": {
+    "_postman_id": "voice-bridge-api",
+    "name": "Denuel Voice Bridge API",
+    "description": "Complete API collection for the Denuel Voice Bridge - Voice cloning, transcription, and synthesis API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{api_key}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "api_key",
+      "value": "your-api-key-here",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Status",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          }
+        },
+        {
+          "name": "Root Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/"
+          }
+        },
+        {
+          "name": "Liveness Probe",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health/live"
+          }
+        },
+        {
+          "name": "Readiness Probe",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health/ready"
+          }
+        },
+        {
+          "name": "Metrics (Prometheus)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/metrics"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Get JWT Token",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/token",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/auth/me"
+          }
+        },
+        {
+          "name": "Create API Key",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/keys",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "name", "value": "My New Key"},
+                {"key": "expires_days", "value": "30"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "List API Keys",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/auth/keys"
+          }
+        },
+        {
+          "name": "Revoke API Key",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/auth/keys/vb_abc123"
+          }
+        },
+        {
+          "name": "Get Rate Limit Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/auth/rate-limit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transcription",
+      "item": [
+        {
+          "name": "Transcribe Audio (Base64)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/transcribe",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_base64\": \"<base64-encoded-audio>\",\n  \"language\": \"en\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Transcribe Audio (File Upload)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/transcribe/file",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key": "file", "type": "file", "src": ""},
+                {"key": "language", "value": "en"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Synthesis",
+      "item": [
+        {
+          "name": "Synthesize Speech (JSON)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/synthesize",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello, this is a test of the voice synthesis.\",\n  \"language\": \"en\",\n  \"speed\": 1.0\n}"
+            }
+          }
+        },
+        {
+          "name": "Synthesize with Voice Profile",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/synthesize",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello, using a cloned voice.\",\n  \"language\": \"en\",\n  \"voice_profile_id\": \"profile-uuid-here\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Synthesize (WAV Download)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/synthesize/wav",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"This will return a WAV file.\",\n  \"language\": \"en\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Voice Cloning",
+      "item": [
+        {
+          "name": "Clone Voice (Full Pipeline)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/clone",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_base64\": \"<base64-encoded-audio>\",\n  \"language\": \"en\",\n  \"enhance_audio\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audio Enhancement",
+      "item": [
+        {
+          "name": "Enhance Audio",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/enhance",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_base64\": \"<base64-encoded-audio>\",\n  \"denoise\": true,\n  \"normalize\": true,\n  \"trim_silence\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Voice Analysis",
+      "item": [
+        {
+          "name": "Analyze Voice",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/analyze",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_base64\": \"<base64-encoded-audio>\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Compare Voices",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/analyze/compare",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio1_base64\": \"<base64-audio-1>\",\n  \"audio2_base64\": \"<base64-audio-2>\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Voice Profiles",
+      "item": [
+        {
+          "name": "List Profiles",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/profiles"
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/profiles/profile-uuid-here"
+          }
+        },
+        {
+          "name": "Create Profile",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/profiles",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My Voice\",\n  \"description\": \"My custom voice profile\",\n  \"language\": \"en\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Add Voice Sample",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/profiles/sample",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profile_id\": \"profile-uuid-here\",\n  \"audio_base64\": \"<base64-encoded-audio>\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Profile",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/profiles/profile-uuid-here"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Background Jobs",
+      "item": [
+        {
+          "name": "Create Job",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/jobs",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_type\": \"transcribe\",\n  \"input_data\": {\"audio_base64\": \"...\"},\n  \"webhook_url\": \"https://your-server.com/webhook\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Job Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/jobs/job-uuid-here"
+          }
+        },
+        {
+          "name": "List Jobs",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/jobs?status=pending&limit=50"
+          }
+        },
+        {
+          "name": "Cancel Job",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/jobs/job-uuid-here/cancel"
+          }
+        },
+        {
+          "name": "Delete Job",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/jobs/job-uuid-here"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "Create Webhook",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/webhooks",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "url", "value": "https://your-server.com/webhook"},
+                {"key": "events", "value": "[\"job.completed\", \"job.failed\"]"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Webhooks",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/webhooks"
+          }
+        },
+        {
+          "name": "Delete Webhook",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/webhooks/webhook-uuid-here"
+          }
+        },
+        {
+          "name": "Test Webhook",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/webhooks/webhook-uuid-here/test"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Billing & Usage",
+      "item": [
+        {
+          "name": "Get Usage",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/billing/usage"
+          }
+        },
+        {
+          "name": "List Plans",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/billing/plans"
+          }
+        },
+        {
+          "name": "Get Plan Details",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/billing/plans/pro"
+          }
+        },
+        {
+          "name": "Upgrade Plan",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/billing/upgrade",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "plan", "value": "pro"},
+                {"key": "success_url", "value": "https://yourapp.com/success"},
+                {"key": "cancel_url", "value": "https://yourapp.com/cancel"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel Subscription",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/billing/cancel"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Get System Stats",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/stats"
+          }
+        },
+        {
+          "name": "List All Users",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/users?limit=100"
+          }
+        },
+        {
+          "name": "Get User Details",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/users/user-id-here"
+          }
+        },
+        {
+          "name": "Update User Plan",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/admin/users/user-id-here/plan?plan=pro"
+          }
+        },
+        {
+          "name": "Disable User",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/users/user-id-here/disable?reason=Terms+violation"
+          }
+        },
+        {
+          "name": "Get Revenue Stats",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/revenue?days=30"
+          }
+        },
+        {
+          "name": "Get Error Summary",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/errors?hours=24"
+          }
+        },
+        {
+          "name": "Get Audit Logs",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/audit-logs?limit=100"
+          }
+        },
+        {
+          "name": "Clear Cache",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/cache/clear"
+          }
+        },
+        {
+          "name": "Start Maintenance Mode",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/maintenance/start?message=Scheduled+maintenance"
+          }
+        },
+        {
+          "name": "Stop Maintenance Mode",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/maintenance/stop"
+          }
+        }
+      ]
+    }
+  ]
+}
