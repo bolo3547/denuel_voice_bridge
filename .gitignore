@@ -79,3 +79,5 @@ phrase_memory.json
 *.bak
 *.swp
 *~
+.vercel
+.env*.local
