@@ -12,8 +12,8 @@ app = FastAPI(
     title="Denuel Voice Bridge API",
     description="Voice cloning, transcription, and synthesis API",
     version="2.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
 )
 
 # Enable CORS
@@ -26,21 +26,22 @@ app.add_middleware(
 )
 
 # Health endpoints
-@app.get("/")
+@app.get("/api")
+@app.get("/api/")
 async def root():
     return {
         "status": "ok",
         "service": "Denuel Voice Bridge API",
         "version": "2.0.0",
         "platform": "vercel",
-        "endpoints": ["/health", "/docs", "/auth/token", "/billing/plans"]
+        "endpoints": ["/api/health", "/api/docs", "/api/auth/token", "/api/billing/plans"]
     }
 
-@app.get("/health")
+@app.get("/api/health")
 async def health():
     return {"status": "ok", "version": "2.0.0"}
 
-@app.get("/billing/plans")
+@app.get("/api/billing/plans")
 async def get_plans():
     return [
         {"tier": "free", "name": "Free", "price": 0, "limits": {"transcribe": 60, "synthesize": 10000}},
@@ -48,11 +49,11 @@ async def get_plans():
         {"tier": "enterprise", "name": "Enterprise", "price": 299.99, "limits": {"transcribe": 6000, "synthesize": 1000000}}
     ]
 
-@app.post("/auth/token")
+@app.post("/api/auth/token")
 async def get_token():
     return {"message": "API key authentication - provide X-API-Key header", "token_type": "bearer"}
 
-@app.get("/billing/usage")
+@app.get("/api/billing/usage")
 async def get_usage():
     return {
         "user_id": "demo",
