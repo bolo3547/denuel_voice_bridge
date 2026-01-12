@@ -1,2 +1,1 @@
-# Vercel API Requirements
-fastapi>=0.104.0
+# Vercel API - no external deps needed
