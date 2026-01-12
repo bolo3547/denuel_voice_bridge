@@ -23,6 +23,27 @@ dependencies:
   audioplayers: ^5.2.1
   path_provider: ^2.1.1
   permission_handler: ^11.1.0
+  
+  # State management
+  provider: ^6.1.1
+  
+  # Local storage
+  shared_preferences: ^2.2.2
+  
+  # Charts for analytics
+  fl_chart: ^0.66.0
+  
+  # HTTP client
+  http: ^1.1.0
+  
+  # UUID generation
+  uuid: ^4.2.1
+  
+  # Animations
+  flutter_animate: ^4.3.0
+  
+  # Confetti for rewards
+  confetti: ^0.7.0
 
 dev_dependencies:
   flutter_test:
