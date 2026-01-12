@@ -4,24 +4,8 @@ Vercel Serverless Entry Point
 Simplified entry point for Vercel deployment.
 """
 
-import os
-import sys
-from pathlib import Path
-
-# Ensure stdout/stderr use UTF-8
-if hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
-
-# Add project root to path
-PROJECT_ROOT = Path(__file__).parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 # Create FastAPI app
 app = FastAPI(
@@ -42,55 +26,42 @@ app.add_middleware(
 )
 
 # Health endpoints
-@app.get("/", tags=["Health"])
+@app.get("/")
 async def root():
     return {
         "status": "ok",
         "service": "Denuel Voice Bridge API",
         "version": "2.0.0",
-        "platform": "vercel"
+        "platform": "vercel",
+        "endpoints": ["/health", "/docs", "/auth/token", "/billing/plans"]
     }
 
-@app.get("/health", tags=["Health"])
+@app.get("/health")
 async def health():
     return {"status": "ok", "version": "2.0.0"}
 
-# Try to load auth router
-try:
-    from ai.api.auth import create_auth_router
-    app.include_router(create_auth_router())
-except Exception as e:
-    print(f"Auth not loaded: {e}")
+@app.get("/billing/plans")
+async def get_plans():
+    return [
+        {"tier": "free", "name": "Free", "price": 0, "limits": {"transcribe": 60, "synthesize": 10000}},
+        {"tier": "pro", "name": "Pro", "price": 29.99, "limits": {"transcribe": 600, "synthesize": 100000}},
+        {"tier": "enterprise", "name": "Enterprise", "price": 299.99, "limits": {"transcribe": 6000, "synthesize": 1000000}}
+    ]
 
-# Try to load billing router
-try:
-    from ai.api.billing import create_billing_router
-    app.include_router(create_billing_router())
-except Exception as e:
-    print(f"Billing not loaded: {e}")
+@app.post("/auth/token")
+async def get_token():
+    return {"message": "API key authentication - provide X-API-Key header", "token_type": "bearer"}
 
-# Try to load jobs router
-try:
-    from ai.api.jobs import create_jobs_router, create_webhooks_router
-    app.include_router(create_jobs_router())
-    app.include_router(create_webhooks_router())
-except Exception as e:
-    print(f"Jobs not loaded: {e}")
-
-# Try to load admin router
-try:
-    from ai.api.admin import create_admin_router
-    app.include_router(create_admin_router())
-except Exception as e:
-    print(f"Admin not loaded: {e}")
-
-# Exception handler
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc)}
-    )
+@app.get("/billing/usage")
+async def get_usage():
+    return {
+        "user_id": "demo",
+        "plan": "free",
+        "usage": {
+            "transcribe": {"used": 0, "limit": 60, "remaining": 60},
+            "synthesize": {"used": 0, "limit": 10000, "remaining": 10000}
+        }
+    }
 
 # Vercel handler
 handler = app
