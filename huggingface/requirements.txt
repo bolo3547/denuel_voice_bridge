@@ -1,23 +1,21 @@
 # Hugging Face Spaces Requirements
-# ==================================
+# Simplified for faster builds
 
 # Core ML
-torch>=2.0.0
-torchaudio>=2.0.0
+torch
+torchaudio
 
 # Speech-to-Text
-openai-whisper>=20231117
+openai-whisper
 
-# Text-to-Speech with Voice Cloning
-TTS>=0.22.0
+# Text-to-Speech with Voice Cloning  
+TTS
 
 # Audio Processing
-numpy>=1.24.0
-scipy>=1.10.0
-librosa>=0.10.0
-
-# Web Interface
-gradio>=4.0.0
+numpy
+scipy
+librosa
+soundfile
 
 # Utilities
-tqdm>=4.65.0
+tqdm

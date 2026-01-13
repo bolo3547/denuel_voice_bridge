@@ -13,6 +13,8 @@ class PracticeSession {
   final List<SpeechMetrics> metricsHistory;
   final SpeechMetrics? finalMetrics;
   final String? audioPath;
+  final String? processedAudioBase64;
+  final String? processedAudioFormat;
   final String? transcript;
   final List<String> notes;
   final bool completed;
@@ -28,6 +30,8 @@ class PracticeSession {
     this.metricsHistory = const [],
     this.finalMetrics,
     this.audioPath,
+    this.processedAudioBase64,
+    this.processedAudioFormat,
     this.transcript,
     this.notes = const [],
     this.completed = false,
@@ -44,6 +48,8 @@ class PracticeSession {
     List<SpeechMetrics>? metricsHistory,
     SpeechMetrics? finalMetrics,
     String? audioPath,
+    String? processedAudioBase64,
+    String? processedAudioFormat,
     String? transcript,
     List<String>? notes,
     bool? completed,
@@ -59,6 +65,8 @@ class PracticeSession {
       metricsHistory: metricsHistory ?? this.metricsHistory,
       finalMetrics: finalMetrics ?? this.finalMetrics,
       audioPath: audioPath ?? this.audioPath,
+      processedAudioBase64: processedAudioBase64 ?? this.processedAudioBase64,
+      processedAudioFormat: processedAudioFormat ?? this.processedAudioFormat,
       transcript: transcript ?? this.transcript,
       notes: notes ?? this.notes,
       completed: completed ?? this.completed,
@@ -76,6 +84,8 @@ class PracticeSession {
         'metricsHistory': metricsHistory.map((m) => m.toJson()).toList(),
         'finalMetrics': finalMetrics?.toJson(),
         'audioPath': audioPath,
+        'processedAudioBase64': processedAudioBase64,
+        'processedAudioFormat': processedAudioFormat,
         'transcript': transcript,
         'notes': notes,
         'completed': completed,
@@ -98,6 +108,8 @@ class PracticeSession {
             ? SpeechMetrics.fromJson(json['finalMetrics'])
             : null,
         audioPath: json['audioPath'],
+        processedAudioBase64: json['processedAudioBase64'],
+        processedAudioFormat: json['processedAudioFormat'] ?? 'wav',
         transcript: json['transcript'],
         notes: List<String>.from(json['notes'] ?? []),
         completed: json['completed'] ?? false,

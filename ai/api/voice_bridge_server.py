@@ -266,6 +266,217 @@ def process_audio():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route('/analyze-pronunciation', methods=['POST'])
+def analyze_pronunciation():
+    """
+    Analyze pronunciation and provide feedback.
+    
+    Request:
+        {
+            "audio_base64": "base64-encoded-audio",
+            "audio_format": "webm" | "wav" | "m4a",
+            "target_text": "The text you were trying to say" (optional)
+        }
+    
+    Response:
+        {
+            "success": true,
+            "recognized_text": "What was actually heard",
+            "target_text": "What you were trying to say",
+            "metrics": {
+                "clarityScore": 85.0,
+                "nasalityScore": 30.0,
+                "pacingScore": 3.2,
+                "breathControlScore": 75.0,
+                "overallScore": 80.0
+            },
+            "phonemeErrors": [...],
+            "suggestions": [...]
+        }
+    """
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify({"success": False, "error": "Invalid JSON body"}), 400
+            
+        audio_base64 = data.get('audio_base64', '')
+        audio_format = data.get('audio_format', 'webm')
+        target_text = data.get('target_text', '')
+        
+        if not audio_base64:
+            return jsonify({"success": False, "error": "No audio provided"}), 400
+        
+        print(f"📥 Analyzing pronunciation: format={audio_format}")
+        
+        # Decode audio
+        try:
+            audio_bytes = base64.b64decode(audio_base64)
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Invalid base64 audio: {e}"}), 400
+        
+        # Convert to numpy array
+        audio_array = decode_audio(audio_bytes, audio_format)
+        
+        if audio_array is None or len(audio_array) == 0:
+            return jsonify({"success": False, "error": "Failed to decode audio"}), 400
+        
+        bridge = get_bridge()
+        
+        # Clean the audio
+        clean_audio = bridge.clean_audio(audio_array)
+        
+        # Transcribe what was actually said
+        recognized_text = bridge.understand(clean_audio)
+        
+        if not recognized_text:
+            return jsonify({
+                "success": True,
+                "recognized_text": "",
+                "target_text": target_text,
+                "metrics": {
+                    "clarityScore": 0,
+                    "nasalityScore": 0,
+                    "pacingScore": 0,
+                    "breathControlScore": 0,
+                    "overallScore": 0
+                },
+                "phonemeErrors": [],
+                "suggestions": ["No speech detected. Please speak louder and closer to the microphone."],
+                "message": "No speech detected"
+            })
+        
+        # Analyze pronunciation quality
+        metrics, phoneme_errors, suggestions = analyze_speech_quality(
+            audio_array=clean_audio,
+            recognized_text=recognized_text,
+            target_text=target_text,
+            sample_rate=22050
+        )
+        
+        return jsonify({
+            "success": True,
+            "recognized_text": recognized_text,
+            "target_text": target_text,
+            "metrics": metrics,
+            "phonemeErrors": phoneme_errors,
+            "suggestions": suggestions
+        })
+    
+    except Exception as e:
+        print(f"Error in analyze_pronunciation: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def analyze_speech_quality(audio_array, recognized_text, target_text, sample_rate=22050):
+    """
+    Analyze speech quality and compare to target text.
+    Returns metrics, phoneme errors, and suggestions.
+    """
+    import difflib
+    
+    # Calculate basic metrics from audio
+    duration = len(audio_array) / sample_rate
+    
+    # Energy analysis (simplified)
+    energy = np.abs(audio_array).mean()
+    energy_db = 20 * np.log10(energy + 1e-10)
+    
+    # Estimate clarity based on energy consistency
+    if len(audio_array) > sample_rate:
+        # Split into chunks and measure variance
+        chunk_size = sample_rate // 4
+        chunks = [audio_array[i:i+chunk_size] for i in range(0, len(audio_array)-chunk_size, chunk_size)]
+        chunk_energies = [np.abs(c).mean() for c in chunks]
+        energy_variance = np.std(chunk_energies) / (np.mean(chunk_energies) + 1e-10)
+        clarity_score = max(0, min(100, 100 - energy_variance * 100))
+    else:
+        clarity_score = 70.0
+    
+    # Pacing (words per minute)
+    word_count = len(recognized_text.split())
+    pacing = (word_count / duration) * 60 if duration > 0 else 0
+    pacing_score = pacing / 15  # Normalize to ~3 syllables/sec
+    
+    # Breath control (based on audio amplitude patterns)
+    breath_score = min(100, clarity_score + 10)
+    
+    # Nasality estimation (simplified - would need spectral analysis for real)
+    nasality_score = max(0, 50 - clarity_score / 3)
+    
+    # Calculate phoneme errors by comparing target vs recognized
+    phoneme_errors = []
+    if target_text:
+        target_words = target_text.lower().split()
+        recognized_words = recognized_text.lower().split()
+        
+        # Find differences
+        matcher = difflib.SequenceMatcher(None, target_words, recognized_words)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == 'replace':
+                for idx, (expected, actual) in enumerate(zip(target_words[i1:i2], recognized_words[j1:j2])):
+                    # Find which phonemes differ
+                    phoneme_errors.append({
+                        "phoneme": expected[:2] if len(expected) > 0 else expected,
+                        "expected": expected,
+                        "actual": actual,
+                        "position": i1 + idx,
+                        "confidence": 0.8
+                    })
+            elif tag == 'delete':
+                for idx, expected in enumerate(target_words[i1:i2]):
+                    phoneme_errors.append({
+                        "phoneme": expected[:2],
+                        "expected": expected,
+                        "actual": "(missing)",
+                        "position": i1 + idx,
+                        "confidence": 0.9
+                    })
+            elif tag == 'insert':
+                for idx, actual in enumerate(recognized_words[j1:j2]):
+                    phoneme_errors.append({
+                        "phoneme": actual[:2],
+                        "expected": "(none)",
+                        "actual": actual,
+                        "position": j1 + idx,
+                        "confidence": 0.7
+                    })
+    
+    # Calculate overall score
+    if target_text:
+        # Use similarity ratio when target is provided
+        similarity = difflib.SequenceMatcher(None, target_text.lower(), recognized_text.lower()).ratio()
+        overall_score = similarity * 100
+    else:
+        overall_score = (clarity_score * 0.4 + breath_score * 0.3 + (100 - nasality_score) * 0.3)
+    
+    metrics = {
+        "clarityScore": round(clarity_score, 1),
+        "nasalityScore": round(nasality_score, 1),
+        "pacingScore": round(pacing_score, 2),
+        "breathControlScore": round(breath_score, 1),
+        "overallScore": round(overall_score, 1)
+    }
+    
+    # Generate suggestions
+    suggestions = []
+    if clarity_score < 70:
+        suggestions.append("Try speaking more slowly and clearly. Enunciate each word.")
+    if overall_score < 70 and target_text:
+        suggestions.append(f"Practice saying: '{target_text}'")
+    if pacing_score < 2:
+        suggestions.append("Try to speak a bit faster for natural flow.")
+    elif pacing_score > 5:
+        suggestions.append("Slow down a little - give each word time.")
+    if len(phoneme_errors) > 0:
+        problem_sounds = list(set([e['expected'] for e in phoneme_errors[:3] if e['expected'] != "(none)"]))
+        if problem_sounds:
+            suggestions.append(f"Focus on these words: {', '.join(problem_sounds)}")
+    if not suggestions:
+        suggestions.append("Great job! Your pronunciation is clear.")
+    
+    return metrics, phoneme_errors, suggestions
+
+
 @app.route('/phrase-memory', methods=['GET'])
 def get_phrase_memory_endpoint():
     """Get current phrase memory."""

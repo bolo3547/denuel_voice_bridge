@@ -1,11 +1,11 @@
 {
-    "name": "denuel_voice_bridge",
-    "short_name": "denuel_voice_bridge",
+    "name": "Denuel Voice Bridge",
+    "short_name": "Voice Bridge",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#667EEA",
+    "theme_color": "#764BA2",
+    "description": "Practice and improve your pronunciation with AI-powered voice analysis.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

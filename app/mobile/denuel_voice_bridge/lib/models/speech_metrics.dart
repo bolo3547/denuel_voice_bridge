@@ -6,6 +6,7 @@ class SpeechMetrics {
   final double breathControlScore; // 0-100
   final double overallScore; // 0-100
   final List<PhonemeError> phonemeErrors;
+  final List<PhonemeSegment> phonemeSegments;
   final List<String> suggestions;
   final DateTime timestamp;
 
@@ -16,6 +17,7 @@ class SpeechMetrics {
     required this.breathControlScore,
     required this.overallScore,
     required this.phonemeErrors,
+    required this.phonemeSegments,
     required this.suggestions,
     required this.timestamp,
   });
@@ -27,6 +29,7 @@ class SpeechMetrics {
         breathControlScore: 0,
         overallScore: 0,
         phonemeErrors: [],
+        phonemeSegments: [],
         suggestions: [],
         timestamp: DateTime.now(),
       );
@@ -38,6 +41,7 @@ class SpeechMetrics {
         'breathControlScore': breathControlScore,
         'overallScore': overallScore,
         'phonemeErrors': phonemeErrors.map((e) => e.toJson()).toList(),
+        'phonemeSegments': phonemeSegments.map((s) => s.toJson()).toList(),
         'suggestions': suggestions,
         'timestamp': timestamp.toIso8601String(),
       };
@@ -51,7 +55,10 @@ class SpeechMetrics {
         phonemeErrors: (json['phonemeErrors'] as List)
             .map((e) => PhonemeError.fromJson(e))
             .toList(),
-        suggestions: List<String>.from(json['suggestions']),
+        phonemeSegments: (json['phonemeSegments'] as List? ?? [])
+            .map((s) => PhonemeSegment.fromJson(s))
+            .toList(),
+        suggestions: List<String>.from(json['suggestions'] ?? []),
         timestamp: DateTime.parse(json['timestamp']),
       );
 
@@ -92,6 +99,35 @@ class PhonemeError {
         expected: json['expected'],
         actual: json['actual'],
         position: json['position'],
+        confidence: (json['confidence'] as num).toDouble(),
+      );
+}
+
+/// Phoneme segment with timestamps (seconds) for annotated playback
+class PhonemeSegment {
+  final String phoneme;
+  final double start; // seconds
+  final double end; // seconds
+  final double confidence;
+
+  PhonemeSegment({
+    required this.phoneme,
+    required this.start,
+    required this.end,
+    required this.confidence,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'phoneme': phoneme,
+        'start': start,
+        'end': end,
+        'confidence': confidence,
+      };
+
+  factory PhonemeSegment.fromJson(Map<String, dynamic> json) => PhonemeSegment(
+        phoneme: json['phoneme'],
+        start: (json['start'] as num).toDouble(),
+        end: (json['end'] as num).toDouble(),
         confidence: (json['confidence'] as num).toDouble(),
       );
 }

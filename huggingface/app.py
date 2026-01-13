@@ -9,9 +9,12 @@ Deploy to Hugging Face Spaces for free GPU access!
 import os
 import io
 import wave
+import json
+import base64
 import tempfile
 import numpy as np
 import gradio as gr
+import torch
 
 # Accept XTTS license
 os.environ["COQUI_TOS_AGREED"] = "1"
@@ -223,6 +226,124 @@ def compare_voices(audio1, audio2):
         return f"Error: {str(e)}"
 
 
+def analyze_pronunciation(audio_input, target_text):
+    """
+    Analyze pronunciation and provide feedback.
+    Compare what was said vs what should have been said.
+    """
+    if audio_input is None:
+        return "Please upload or record audio first.", "", ""
+    
+    try:
+        import difflib
+        
+        # Transcribe what was actually said
+        recognized_text = transcribe_audio(audio_input)
+        
+        if recognized_text.startswith("Error"):
+            return recognized_text, "", ""
+        
+        # Get audio array for analysis
+        if isinstance(audio_input, tuple):
+            sample_rate, audio_array = audio_input
+            if audio_array.dtype == np.int16:
+                audio_array = audio_array.astype(np.float32) / 32767.0
+            if len(audio_array.shape) > 1:
+                audio_array = audio_array.mean(axis=1)
+        else:
+            import whisper
+            audio_array = whisper.load_audio(audio_input)
+            sample_rate = 16000
+        
+        duration = len(audio_array) / sample_rate
+        
+        # Calculate metrics
+        energy = np.abs(audio_array).mean()
+        
+        # Clarity score based on energy consistency
+        if len(audio_array) > sample_rate:
+            chunk_size = sample_rate // 4
+            chunks = [audio_array[i:i+chunk_size] for i in range(0, len(audio_array)-chunk_size, chunk_size)]
+            chunk_energies = [np.abs(c).mean() for c in chunks]
+            energy_variance = np.std(chunk_energies) / (np.mean(chunk_energies) + 1e-10)
+            clarity_score = max(0, min(100, 100 - energy_variance * 100))
+        else:
+            clarity_score = 70.0
+        
+        # Pacing
+        word_count = len(recognized_text.split())
+        words_per_min = (word_count / duration) * 60 if duration > 0 else 0
+        
+        # Compare with target if provided
+        phoneme_errors = []
+        overall_score = clarity_score
+        
+        if target_text and target_text.strip():
+            target_words = target_text.lower().strip().split()
+            recognized_words = recognized_text.lower().strip().split()
+            
+            # Calculate similarity
+            similarity = difflib.SequenceMatcher(None, target_text.lower(), recognized_text.lower()).ratio()
+            overall_score = similarity * 100
+            
+            # Find word differences
+            matcher = difflib.SequenceMatcher(None, target_words, recognized_words)
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == 'replace':
+                    for expected, actual in zip(target_words[i1:i2], recognized_words[j1:j2]):
+                        phoneme_errors.append(f"'{expected}' → '{actual}'")
+                elif tag == 'delete':
+                    for expected in target_words[i1:i2]:
+                        phoneme_errors.append(f"'{expected}' (missing)")
+                elif tag == 'insert':
+                    for actual in recognized_words[j1:j2]:
+                        phoneme_errors.append(f"(extra) '{actual}'")
+        
+        # Build results
+        metrics_text = f"""## 📊 Speech Analysis
+
+| Metric | Score |
+|--------|-------|
+| **Clarity** | {clarity_score:.0f}/100 |
+| **Overall** | {overall_score:.0f}/100 |
+| **Pace** | {words_per_min:.0f} words/min |
+| **Duration** | {duration:.1f}s |
+"""
+        
+        # Errors
+        if phoneme_errors:
+            errors_text = "## ⚠️ Pronunciation Errors\n\n"
+            for err in phoneme_errors[:5]:
+                errors_text += f"- {err}\n"
+        else:
+            if target_text:
+                errors_text = "## ✅ Perfect!\n\nYour pronunciation matched the target text."
+            else:
+                errors_text = "## 💡 Tip\n\nEnter target text to compare your pronunciation."
+        
+        # Suggestions
+        suggestions = []
+        if clarity_score < 70:
+            suggestions.append("Try speaking more slowly and clearly")
+        if overall_score < 70 and target_text:
+            suggestions.append(f"Practice: '{target_text}'")
+        if words_per_min > 180:
+            suggestions.append("Slow down a bit for clearer speech")
+        elif words_per_min < 80 and duration > 2:
+            suggestions.append("Try speaking a bit faster for natural flow")
+        if len(phoneme_errors) > 0:
+            suggestions.append("Focus on the words highlighted as errors")
+        if not suggestions:
+            suggestions.append("Great job! Keep practicing!")
+        
+        suggestions_text = "## 💡 Suggestions\n\n" + "\n".join([f"- {s}" for s in suggestions])
+        
+        return f"**You said:** {recognized_text}", metrics_text + "\n" + errors_text, suggestions_text
+    
+    except Exception as e:
+        return f"Error: {str(e)}", "", ""
+
+
 # ============================================================
 # Gradio Interface
 # ============================================================
@@ -394,7 +515,55 @@ with gr.Blocks(css=css, title="Denuel Voice Bridge") as demo:
                 outputs=[compare_result]
             )
         
-        # Tab 5: API Info
+        # Tab 5: Pronunciation Practice
+        with gr.TabItem("🗣️ Pronunciation"):
+            gr.Markdown(
+                """
+                ## Practice Your Pronunciation
+                
+                1. **Enter the target sentence** you want to practice
+                2. **Record yourself** saying it
+                3. **Get feedback** on your pronunciation
+                """
+            )
+            
+            with gr.Row():
+                with gr.Column():
+                    pron_target = gr.Textbox(
+                        label="📝 Target Text (what you want to say)",
+                        lines=2,
+                        placeholder="The quick brown fox jumps over the lazy dog."
+                    )
+                    pron_audio = gr.Audio(
+                        label="🎤 Record Yourself",
+                        type="numpy",
+                        sources=["microphone", "upload"]
+                    )
+                    pron_btn = gr.Button("🔍 Analyze Pronunciation", variant="primary")
+                
+                with gr.Column():
+                    pron_recognized = gr.Markdown(label="What you said")
+                    pron_metrics = gr.Markdown(label="Analysis")
+                    pron_suggestions = gr.Markdown(label="Suggestions")
+            
+            # Practice prompts
+            gr.Markdown("### 📋 Practice Prompts (click to use)")
+            with gr.Row():
+                prompt1 = gr.Button("The quick brown fox", size="sm")
+                prompt2 = gr.Button("She sells seashells", size="sm")
+                prompt3 = gr.Button("Peter Piper picked", size="sm")
+            
+            prompt1.click(lambda: "The quick brown fox jumps over the lazy dog.", outputs=[pron_target])
+            prompt2.click(lambda: "She sells seashells by the seashore.", outputs=[pron_target])
+            prompt3.click(lambda: "Peter Piper picked a peck of pickled peppers.", outputs=[pron_target])
+            
+            pron_btn.click(
+                fn=analyze_pronunciation,
+                inputs=[pron_audio, pron_target],
+                outputs=[pron_recognized, pron_metrics, pron_suggestions]
+            )
+        
+        # Tab 6: API Info
         with gr.TabItem("🔌 API"):
             gr.Markdown(
                 """
@@ -448,6 +617,157 @@ with gr.Blocks(css=css, title="Denuel Voice Bridge") as demo:
         
         ⚠️ **Note:** Voice cloning should only be used ethically and with consent.
         """
+    )
+
+
+# ============================================================
+# REST API Endpoints for Flutter App
+# ============================================================
+
+def process_audio_api(audio_base64: str, format: str = "wav") -> dict:
+    """
+    Process audio through the voice bridge pipeline.
+    Returns transcription and enhanced/processed audio.
+    """
+    try:
+        # Decode base64 audio
+        audio_bytes = base64.b64decode(audio_base64)
+        
+        # Save to temp file
+        suffix = f".{format}" if format else ".wav"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+            f.write(audio_bytes)
+            temp_path = f.name
+        
+        # Load audio with librosa
+        import librosa
+        import scipy.signal
+        
+        audio_array, sr = librosa.load(temp_path, sr=16000)
+        
+        # Transcribe
+        model = load_whisper()
+        result = model.transcribe(audio_array)
+        transcription = result["text"].strip()
+        
+        # Apply noise reduction
+        try:
+            import noisereduce as nr
+            enhanced_audio = nr.reduce_noise(y=audio_array, sr=sr)
+        except:
+            enhanced_audio = audio_array
+        
+        # Convert to wav bytes for response
+        enhanced_int = (enhanced_audio * 32767).astype(np.int16)
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(enhanced_int.tobytes())
+        
+        enhanced_base64 = base64.b64encode(wav_buffer.getvalue()).decode('utf-8')
+        
+        # Cleanup
+        os.unlink(temp_path)
+        
+        return {
+            "success": True,
+            "transcription": transcription,
+            "audio_base64": enhanced_base64,
+            "format": "wav",
+            "sample_rate": sr,
+            "duration": len(enhanced_audio) / sr
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+def synthesize_api(text: str, language: str = "en", voice_base64: str = None) -> dict:
+    """
+    Synthesize text to speech with optional voice cloning.
+    """
+    try:
+        model = load_tts()
+        
+        # Language mapping
+        lang_map = {
+            "en": "en", "es": "es", "fr": "fr", "de": "de",
+            "it": "it", "pt": "pt", "pl": "pl", "tr": "tr",
+            "ru": "ru", "nl": "nl", "cs": "cs", "ar": "ar",
+            "zh": "zh-cn", "ja": "ja", "ko": "ko", "hi": "hi"
+        }
+        lang_code = lang_map.get(language, "en")
+        
+        voice_path = None
+        if voice_base64:
+            # Decode voice sample
+            voice_bytes = base64.b64decode(voice_base64)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(voice_bytes)
+                voice_path = f.name
+        
+        # Synthesize
+        if voice_path:
+            wav = model.tts(text=text, speaker_wav=voice_path, language=lang_code)
+            os.unlink(voice_path)
+        else:
+            wav = model.tts(text=text, language=lang_code)
+        
+        audio_array = np.array(wav, dtype=np.float32)
+        
+        # Convert to wav bytes
+        audio_int = (audio_array * 32767).astype(np.int16)
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(22050)
+            wf.writeframes(audio_int.tobytes())
+        
+        audio_base64 = base64.b64encode(wav_buffer.getvalue()).decode('utf-8')
+        
+        return {
+            "success": True,
+            "audio_base64": audio_base64,
+            "format": "wav",
+            "sample_rate": 22050,
+            "duration": len(audio_array) / 22050
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# Create API interface for Gradio
+with gr.Blocks() as api_interface:
+    # Hidden API endpoints
+    gr.Interface(
+        fn=process_audio_api,
+        inputs=[
+            gr.Textbox(label="audio_base64"),
+            gr.Textbox(label="format", value="wav")
+        ],
+        outputs=gr.JSON(),
+        api_name="process_audio"
+    )
+    
+    gr.Interface(
+        fn=synthesize_api,
+        inputs=[
+            gr.Textbox(label="text"),
+            gr.Textbox(label="language", value="en"),
+            gr.Textbox(label="voice_base64", value="")
+        ],
+        outputs=gr.JSON(),
+        api_name="synthesize"
     )
 
 

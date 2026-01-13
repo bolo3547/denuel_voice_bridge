@@ -69,6 +69,10 @@ class _HomeScreenV2State extends State<HomeScreenV2> with TickerProviderStateMix
         _playbackPosition = Duration.zero;
       });
     });
+    // Add error handling for playback failures
+    _player.onLog.listen((log) {
+      debugPrint('AudioPlayer log: $log');
+    });
   }
 
   Future<void> _requestPermissions() async {
@@ -76,30 +80,62 @@ class _HomeScreenV2State extends State<HomeScreenV2> with TickerProviderStateMix
   }
 
   Future<void> _startRecording() async {
-    if (!await _recorder.hasPermission()) {
-      await Permission.microphone.request();
-      return;
+    try {
+      if (!await _recorder.hasPermission()) {
+        await Permission.microphone.request();
+        if (!await _recorder.hasPermission()) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission denied')),
+          );
+          return;
+        }
+      }
+
+      String recordPath;
+      RecordConfig config;
+      
+      if (kIsWeb) {
+        // On web, use webm/opus format which is better supported
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        recordPath = 'recording_$timestamp.webm';
+        config = const RecordConfig(
+          encoder: AudioEncoder.opus,
+          bitRate: 128000,
+          sampleRate: 44100,
+        );
+      } else {
+        // On native, use m4a/aac format
+        final dir = await getApplicationDocumentsDirectory();
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        recordPath = '${dir.path}/recording_$timestamp.m4a';
+        config = const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        );
+      }
+
+      _recordingPath = recordPath;
+      debugPrint('Starting recording to: $recordPath');
+      
+      await _recorder.start(config, path: recordPath);
+
+      setState(() {
+        _isRecording = true;
+        _recordingDuration = Duration.zero;
+      });
+
+      _pulseController.repeat(reverse: true);
+      
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        setState(() => _recordingDuration += const Duration(seconds: 1));
+      });
+    } catch (e) {
+      debugPrint('Error starting recording: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error starting recording: $e')),
+      );
     }
-
-    final dir = await getApplicationDocumentsDirectory();
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    _recordingPath = '${dir.path}/recording_$timestamp.m4a';
-
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc),
-      path: _recordingPath!,
-    );
-
-    setState(() {
-      _isRecording = true;
-      _recordingDuration = Duration.zero;
-    });
-
-    _pulseController.repeat(reverse: true);
-    
-    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() => _recordingDuration += const Duration(seconds: 1));
-    });
   }
 
   Future<void> _stopRecording() async {
@@ -107,49 +143,152 @@ class _HomeScreenV2State extends State<HomeScreenV2> with TickerProviderStateMix
     _pulseController.stop();
     _pulseController.reset();
     
-    final path = await _recorder.stop();
-    
-    if (path != null) {
+    try {
+      final path = await _recorder.stop();
+      debugPrint('Recording stopped, path: $path');
+      
+      if (path != null && path.isNotEmpty) {
+        // On native, verify the file was actually created
+        if (!kIsWeb) {
+          final file = File(path);
+          if (await file.exists()) {
+            final fileSize = await file.length();
+            debugPrint('Recording saved: $path, size: $fileSize bytes');
+            if (fileSize == 0) {
+              debugPrint('Warning: Recording file is empty!');
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Recording failed - file is empty')),
+              );
+              setState(() {
+                _isRecording = false;
+                _hasRecording = false;
+              });
+              return;
+            }
+          } else {
+            debugPrint('Recording file was not created');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Recording failed - file not created')),
+            );
+            setState(() {
+              _isRecording = false;
+              _hasRecording = false;
+            });
+            return;
+          }
+        }
+        
+        setState(() {
+          _isRecording = false;
+          _hasRecording = true;
+          _recordingPath = path;
+          
+          // Add to recordings list
+          _recordings.insert(0, RecordingItem(
+            path: path,
+            duration: _recordingDuration,
+            createdAt: DateTime.now(),
+          ));
+        });
+        
+        debugPrint('Recording completed successfully');
+      } else {
+        debugPrint('Recording returned null/empty path');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Recording failed')),
+        );
+        setState(() {
+          _isRecording = false;
+          _hasRecording = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error stopping recording: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error stopping recording: $e')),
+      );
       setState(() {
         _isRecording = false;
-        _hasRecording = true;
-        _recordingPath = path;
-        
-        // Add to recordings list
-        _recordings.insert(0, RecordingItem(
-          path: path,
-          duration: _recordingDuration,
-          createdAt: DateTime.now(),
-        ));
+        _hasRecording = false;
       });
     }
   }
 
   Future<void> _playRecording() async {
-    if (_recordingPath == null) return;
+    if (_recordingPath == null) {
+      debugPrint('No recording path available');
+      return;
+    }
+
+    debugPrint('Attempting to play: $_recordingPath');
 
     if (_isPlaying) {
       await _player.pause();
       setState(() => _isPlaying = false);
     } else {
-      // Use UrlSource on web, DeviceFileSource on native platforms
-      if (kIsWeb) {
-        await _player.play(UrlSource(_recordingPath!));
-      } else {
-        await _player.play(DeviceFileSource(_recordingPath!));
+      try {
+        // Use UrlSource on web, DeviceFileSource on native platforms
+        if (kIsWeb) {
+          debugPrint('Playing on web with UrlSource');
+          await _player.play(UrlSource(_recordingPath!));
+        } else {
+          // Verify file exists before playing
+          final file = File(_recordingPath!);
+          if (!await file.exists()) {
+            debugPrint('Recording file does not exist: $_recordingPath');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Recording file not found')),
+            );
+            return;
+          }
+          final fileSize = await file.length();
+          debugPrint('File exists, size: $fileSize bytes');
+          if (fileSize == 0) {
+            debugPrint('Recording file is empty');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Recording file is empty')),
+            );
+            return;
+          }
+          debugPrint('Playing on native with DeviceFileSource');
+          await _player.play(DeviceFileSource(_recordingPath!));
+        }
+        setState(() => _isPlaying = true);
+      } catch (e) {
+        debugPrint('Error playing recording: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error playing: $e')),
+        );
+        setState(() => _isPlaying = false);
       }
-      setState(() => _isPlaying = true);
     }
   }
 
   Future<void> _playRecordingItem(RecordingItem item) async {
-    await _player.stop();
-    if (kIsWeb) {
-      await _player.play(UrlSource(item.path));
-    } else {
-      await _player.play(DeviceFileSource(item.path));
+    try {
+      await _player.stop();
+      debugPrint('Playing recording item: ${item.path}');
+      if (kIsWeb) {
+        await _player.play(UrlSource(item.path));
+      } else {
+        // Verify file exists
+        final file = File(item.path);
+        if (!await file.exists()) {
+          debugPrint('Recording item file not found: ${item.path}');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Recording file not found')),
+          );
+          return;
+        }
+        await _player.play(DeviceFileSource(item.path));
+      }
+      setState(() => _isPlaying = true);
+    } catch (e) {
+      debugPrint('Error playing recording item: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error playing: $e')),
+      );
     }
-    setState(() => _isPlaying = true);
   }
 
   String _formatDuration(Duration d) {
@@ -358,6 +497,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> with TickerProviderStateMix
                             color: Colors.white.withOpacity(0.5),
                             fontSize: 12,
                           ),
+                        ),
                         Text(
                           _formatDuration(_playbackDuration > Duration.zero ? _playbackDuration : _recordingDuration),
                           style: TextStyle(

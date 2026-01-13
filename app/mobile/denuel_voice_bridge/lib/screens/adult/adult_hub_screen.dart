@@ -7,6 +7,8 @@ import 'scenario_selection_screen.dart';
 import 'breath_exercise_screen.dart';
 import 'progress_dashboard_screen.dart';
 import 'adult_settings_screen.dart';
+import 'phoneme_practice_screen.dart';
+import 'daily_tips_screen.dart';
 import '../mode_selector/mode_selector_screen.dart';
 
 /// Adult Mode Hub - Professional dashboard
@@ -260,6 +262,34 @@ class _AdultHomeTab extends StatelessWidget {
                     builder: (_) => const ScenarioSelectionScreen(
                       preselectedScenario: ScenarioType.phoneCall,
                     ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _QuickActionCard(
+              icon: Icons.record_voice_over_rounded,
+              title: 'Phoneme Practice',
+              subtitle: 'Target specific sounds (P, B, K, G...)',
+              color: const Color(0xFF8B5CF6),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const PhonemePracticeScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _QuickActionCard(
+              icon: Icons.lightbulb_rounded,
+              title: 'Tips & Techniques',
+              subtitle: 'Daily speech improvement tips',
+              color: const Color(0xFFF59E0B),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const DailyTipsScreen(),
                   ),
                 );
               },

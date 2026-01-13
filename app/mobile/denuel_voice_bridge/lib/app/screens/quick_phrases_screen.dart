@@ -329,11 +329,106 @@ class _QuickPhrasesScreenState extends State<QuickPhrasesScreen> {
   }
 
   void _editPhrase(PhraseItem phrase) {
-    // TODO: Implement edit dialog
+    final controller = TextEditingController(text: phrase.text);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Edit Phrase'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Enter your phrase...',
+            filled: true,
+            fillColor: AppColors.background,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                setState(() {
+                  // Find and update the phrase in all categories
+                  _categories.forEach((category, phrases) {
+                    final index = phrases.indexWhere((p) => p.text == phrase.text);
+                    if (index != -1) {
+                      phrases[index] = PhraseItem(
+                        controller.text.trim(),
+                        phrase.icon,
+                        isUrgent: phrase.isUrgent,
+                      );
+                    }
+                  });
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Phrase updated!'),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                );
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _deletePhrase(PhraseItem phrase) {
-    // TODO: Implement delete confirmation
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete Phrase?'),
+        content: Text(
+          'Are you sure you want to delete:\n\n"${phrase.text}"',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+            ),
+            onPressed: () {
+              setState(() {
+                // Remove the phrase from the current category
+                _categories[_selectedCategory]?.removeWhere(
+                  (p) => p.text == phrase.text,
+                );
+              });
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Phrase deleted'),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              );
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showAddPhraseDialog() {

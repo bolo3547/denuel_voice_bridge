@@ -44,6 +44,7 @@ dependencies:
   
   # Confetti for rewards
   confetti: ^0.7.0
+  share_plus: ^6.3.0
 
 dev_dependencies:
   flutter_test:

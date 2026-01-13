@@ -15,6 +15,7 @@ class SessionService extends ChangeNotifier {
   
   // Getters
   List<PracticeSession> get sessions => List.unmodifiable(_sessions);
+  List<PracticeSession> get allSessions => List.unmodifiable(_sessions);
   PracticeSession? get currentSession => _currentSession;
   bool get hasActiveSession => _currentSession != null;
   
@@ -93,6 +94,8 @@ class SessionService extends ChangeNotifier {
   Future<PracticeSession?> endSession({
     SpeechMetrics? finalMetrics,
     String? audioPath,
+    String? processedAudioBase64,
+    String? processedAudioFormat,
     String? transcript,
     List<String>? notes,
   }) async {
@@ -104,6 +107,8 @@ class SessionService extends ChangeNotifier {
       duration: now.difference(_currentSession!.startTime),
       finalMetrics: finalMetrics,
       audioPath: audioPath,
+      processedAudioBase64: processedAudioBase64,
+      processedAudioFormat: processedAudioFormat,
       transcript: transcript,
       notes: notes ?? [],
       completed: true,
@@ -177,6 +182,28 @@ class SessionService extends ChangeNotifier {
     _sessions.removeWhere((s) => s.id == id);
     await _saveSessions();
     notifyListeners();
+  }
+
+  /// Update a session's notes
+  Future<void> updateSessionNotes(String id, List<String> notes) async {
+    final index = _sessions.indexWhere((s) => s.id == id);
+    if (index != -1) {
+      _sessions[index] = _sessions[index].copyWith(notes: notes);
+      await _saveSessions();
+      notifyListeners();
+    }
+  }
+
+  /// Add a note to a session
+  Future<void> addNoteToSession(String id, String note) async {
+    final index = _sessions.indexWhere((s) => s.id == id);
+    if (index != -1) {
+      final currentNotes = List<String>.from(_sessions[index].notes);
+      currentNotes.add(note);
+      _sessions[index] = _sessions[index].copyWith(notes: currentNotes);
+      await _saveSessions();
+      notifyListeners();
+    }
   }
 
   /// Clear all sessions

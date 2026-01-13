@@ -11,6 +11,7 @@ class ChildTheme {
   // Accent colors
   static const Color accent = Color(0xFFF472B6); // Pink 400
   static const Color accentLight = Color(0xFFFBCFE8); // Pink 200
+  static const Color secondary = Color(0xFF8B5CF6); // Violet 500
   
   // Background colors - Soft, warm
   static const Color background = Color(0xFFFFFBEB); // Amber 50

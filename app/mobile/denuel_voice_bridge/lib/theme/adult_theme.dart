@@ -135,6 +135,13 @@ class AdultTheme {
         height: 1.4,
       );
 
+  static TextStyle get labelSmall => GoogleFonts.inter(
+        fontSize: 10,
+        fontWeight: FontWeight.w500,
+        color: textTertiary,
+        height: 1.4,
+      );
+
   static TextStyle get metricValue => GoogleFonts.inter(
         fontSize: 36,
         fontWeight: FontWeight.w700,

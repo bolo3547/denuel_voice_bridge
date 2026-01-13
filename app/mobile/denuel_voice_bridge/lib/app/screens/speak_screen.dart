@@ -496,6 +496,8 @@ class _SpeakScreenState extends State<SpeakScreen>
           _processedAudioBase64 = processedAudio;
           _isProcessing = false;
         });
+        // Keep last processed audio globally available for quick playback
+        VoiceBridgeService.setLastProcessedAudioBase64(processedAudio);
         
         if (recognizedText.isEmpty) {
           setState(() {

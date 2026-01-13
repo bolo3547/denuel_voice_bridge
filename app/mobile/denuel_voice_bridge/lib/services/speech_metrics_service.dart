@@ -1,9 +1,12 @@
 import 'dart:math';
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/models.dart';
+import 'voice_bridge_service.dart';
 
 /// Service for analyzing speech and generating metrics
-/// This is a local simulation - in production, connect to real ASR/analysis
+/// Connects to voice_bridge backend for real analysis, falls back to simulation
 class SpeechMetricsService extends ChangeNotifier {
   bool _isAnalyzing = false;
   SpeechMetrics? _lastMetrics;
@@ -12,7 +15,7 @@ class SpeechMetricsService extends ChangeNotifier {
   SpeechMetrics? get lastMetrics => _lastMetrics;
 
   /// Analyze speech audio and return metrics
-  /// In production, this would connect to your voice_bridge backend
+  /// Tries real backend first, falls back to simulation
   Future<SpeechMetrics> analyzeAudio({
     required String audioPath,
     String? targetText,
@@ -22,11 +25,62 @@ class SpeechMetricsService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Simulate processing time
-      await Future.delayed(const Duration(milliseconds: 1500));
+      // Try to use real backend for pronunciation analysis
+      final backendAvailable = await VoiceBridgeService.isServerRunning();
+      
+      if (backendAvailable && !kIsWeb) {
+        try {
+          // Read audio file and convert to base64
+          final file = File(audioPath);
+          if (await file.exists()) {
+            final bytes = await file.readAsBytes();
+            final base64Audio = base64Encode(bytes);
+            final format = audioPath.endsWith('.m4a') ? 'm4a' : 
+                          audioPath.endsWith('.webm') ? 'webm' : 'wav';
+            
+            // Call backend for real pronunciation analysis
+            final result = await VoiceBridgeService.analyzePronunciation(
+              base64Audio,
+              format,
+              targetText: targetText,
+            );
+            
+            if (result['success'] == true) {
+              final metricsData = result['metrics'] as Map<String, dynamic>;
+              final errorsData = result['phonemeErrors'] as List<dynamic>? ?? [];
+              final suggestionsData = result['suggestions'] as List<dynamic>? ?? [];
+              
+              final metrics = SpeechMetrics(
+                clarityScore: (metricsData['clarityScore'] as num).toDouble(),
+                nasalityScore: (metricsData['nasalityScore'] as num).toDouble(),
+                pacingScore: (metricsData['pacingScore'] as num).toDouble(),
+                breathControlScore: (metricsData['breathControlScore'] as num).toDouble(),
+                overallScore: (metricsData['overallScore'] as num).toDouble(),
+                phonemeErrors: errorsData.map((e) => PhonemeError(
+                  phoneme: e['phoneme'] ?? '',
+                  expected: e['expected'] ?? '',
+                  actual: e['actual'] ?? '',
+                  position: e['position'] ?? 0,
+                  confidence: (e['confidence'] as num?)?.toDouble() ?? 0.8,
+                )).toList(),
+                phonemeSegments: [],
+                suggestions: suggestionsData.map((s) => s.toString()).toList(),
+                timestamp: DateTime.now(),
+              );
+              
+              _lastMetrics = metrics;
+              _isAnalyzing = false;
+              notifyListeners();
+              return metrics;
+            }
+          }
+        } catch (e) {
+          debugPrint('Backend analysis failed, falling back to simulation: $e');
+        }
+      }
 
-      // Generate simulated metrics
-      // In production, replace with real analysis from your backend
+      // Fall back to simulated metrics if backend unavailable
+      await Future.delayed(const Duration(milliseconds: 1500));
       final metrics = _generateSimulatedMetrics(targetPhonemes);
       
       _lastMetrics = metrics;
@@ -141,6 +195,22 @@ class SpeechMetricsService extends ChangeNotifier {
       ));
     }
 
+    // Simulate phoneme segments (timestamps in seconds) for annotated playback
+    final segments = <PhonemeSegment>[];
+    final segCount = 3 + random.nextInt(5);
+    double cursor = 0.0;
+    for (int i = 0; i < segCount; i++) {
+      final phon = possibleErrors[random.nextInt(possibleErrors.length)];
+      final dur = 0.4 + random.nextDouble() * 0.9; // 0.4s - 1.3s
+      segments.add(PhonemeSegment(
+        phoneme: phon,
+        start: double.parse(cursor.toStringAsFixed(2)),
+        end: double.parse((cursor + dur).toStringAsFixed(2)),
+        confidence: 0.6 + random.nextDouble() * 0.4,
+      ));
+      cursor += dur + (0.05 + random.nextDouble() * 0.2);
+    }
+
     final suggestions = <String>[];
     if (clarity < 75) suggestions.add('Focus on clear articulation');
     if (nasality > 50) suggestions.add('Try breath exercises for nasal control');
@@ -153,6 +223,7 @@ class SpeechMetricsService extends ChangeNotifier {
       breathControlScore: breath,
       overallScore: overall,
       phonemeErrors: errors,
+      phonemeSegments: segments,
       suggestions: suggestions,
       timestamp: DateTime.now(),
     );

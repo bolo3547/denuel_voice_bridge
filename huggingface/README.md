@@ -1,65 +1,67 @@
 ---
 title: Denuel Voice Bridge
-emoji: 🎙️
-colorFrom: purple
-colorTo: blue
+emoji: �
+colorFrom: teal
+colorTo: indigo
 sdk: gradio
-sdk_version: 4.0.0
+sdk_version: 4.44.0
 app_file: app.py
 pinned: false
 license: mit
-hardware: gpu-basic
 ---
 
-# 🎙️ Denuel Voice Bridge
+# 🌉 Denuel Voice Bridge
 
-Voice cloning, transcription, and synthesis powered by **Whisper** and **XTTS v2**.
+AI-powered speech therapy companion using voice cloning technology to help people with cleft palate develop clearer speech.
 
 ## Features
 
-- **🎭 Voice Cloning** - Clone any voice from a sample
-- **📝 Transcription** - Speech-to-text with Whisper
-- **🔊 Synthesis** - Text-to-speech with voice cloning
-- **🌍 Multi-language** - 16 languages supported
-- **🎭 Emotion Styles** - Add emotional tone to speech
-- **📊 Voice Comparison** - Compare voice similarity
+- 🎤 **Speech-to-Text**: Transcribe audio using OpenAI Whisper
+- 🔊 **Text-to-Speech**: Synthesize speech with XTTS v2
+- 🎭 **Voice Cloning**: Clone voices for personalized speech synthesis  
+- 📊 **Voice Comparison**: Compare voice samples for similarity
+- 🔌 **REST API**: Full API for mobile app integration
 
-## Usage
+## API Usage
 
-1. **Voice Clone Tab**: Record or upload audio → Get cloned output
-2. **Transcribe Tab**: Convert speech to text
-3. **Synthesize Tab**: Convert text to speech (with optional voice cloning)
-4. **Compare Tab**: Compare two voice samples
-
-## API
-
-This Space provides an API for integration with your apps:
-
+### Process Audio
 ```python
 from gradio_client import Client
 
 client = Client("YOUR_USERNAME/denuel-voice-bridge")
 
-# Clone voice
+# Process audio (transcription + enhancement)
 result = client.predict(
-    audio_file,      # Input audio
-    "English",       # Language
-    "neutral",       # Emotion
-    api_name="/clone_voice"
+    audio_base64="<base64_encoded_audio>",
+    format="wav",
+    api_name="/process_audio"
 )
 ```
 
-## Models Used
+### Synthesize Speech
+```python
+result = client.predict(
+    text="Hello, how are you?",
+    language="en",
+    voice_base64="<optional_voice_sample>",
+    api_name="/synthesize"
+)
+```
 
-- **Whisper Base** - OpenAI's speech recognition
-- **XTTS v2** - Coqui's voice cloning TTS
+## Flutter Integration
+
+Update `VoiceBridgeService` with your Space URL:
+
+```dart
+static const String _baseUrl = 'https://YOUR_USERNAME-denuel-voice-bridge.hf.space';
+```
+
+## Built With
+
+- [OpenAI Whisper](https://github.com/openai/whisper) - Speech recognition
+- [Coqui TTS (XTTS v2)](https://github.com/coqui-ai/TTS) - Voice synthesis & cloning
+- [Gradio](https://gradio.app) - Web interface
 
 ## License
 
 MIT License - Use responsibly and ethically.
-
-## Links
-
-- [GitHub Repository](https://github.com/YOUR_USERNAME/denuel_voice_bridge)
-- [Whisper](https://github.com/openai/whisper)
-- [XTTS](https://github.com/coqui-ai/TTS)

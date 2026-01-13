@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -32,6 +33,8 @@ class _SessionPlayScreenState extends State<SessionPlayScreen> {
   bool _isRecording = false;
   bool _isAnalyzing = false;
   String? _recordingPath;
+  String? _processedAudioBase64;
+  String _processedAudioFormat = 'wav';
   Duration _recordingDuration = Duration.zero;
   Timer? _durationTimer;
 
@@ -111,6 +114,8 @@ class _SessionPlayScreenState extends State<SessionPlayScreen> {
 
   Future<void> _analyzeRecording(String path) async {
     final metricsService = context.read<SpeechMetricsService>();
+
+    // First run local analysis
     final metrics = await metricsService.analyzeAudio(audioPath: path);
 
     setState(() {
@@ -118,9 +123,39 @@ class _SessionPlayScreenState extends State<SessionPlayScreen> {
       _sessionMetrics.add(metrics);
     });
 
-    // Update session
+    // Update session metrics history
     final sessionService = context.read<SessionService>();
     sessionService.updateSessionMetrics(metrics);
+
+    // If backend available, upload audio to get processed (clear) audio back
+    try {
+      final voiceBridgeAvailable = await VoiceBridgeService.isServerRunning();
+      if (voiceBridgeAvailable) {
+        setState(() => _isAnalyzing = true);
+
+        // Read file bytes and send as base64
+        final fileBytes = await File(path).readAsBytes();
+        final base64 = base64Encode(fileBytes);
+
+        final result = await VoiceBridgeService.processAudio(base64, 'm4a');
+        final processedBase64 = result['audio_base64'] ?? '';
+
+        if (processedBase64 != null && (processedBase64 as String).isNotEmpty) {
+          // save to session local variable for later endSession storage
+          setState(() {
+            _processedAudioBase64 = processedBase64 as String;
+            _processedAudioFormat = 'wav'; // backend returns wav by default
+          });
+
+          // Keep a global short-term copy for quick playback
+          VoiceBridgeService.setLastProcessedAudioBase64(_processedAudioBase64);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error processing audio with backend: $e');
+    } finally {
+      setState(() => _isAnalyzing = false);
+    }
   }
 
   void _nextPrompt() {
@@ -161,6 +196,7 @@ class _SessionPlayScreenState extends State<SessionPlayScreen> {
         breathControlScore: avgBreath,
         overallScore: avgOverall,
         phonemeErrors: _sessionMetrics.expand((m) => m.phonemeErrors).toList(),
+        phonemeSegments: _sessionMetrics.expand((m) => m.phonemeSegments).toList(),
         suggestions: _sessionMetrics.expand((m) => m.suggestions).toSet().toList(),
         timestamp: DateTime.now(),
       );
@@ -169,6 +205,8 @@ class _SessionPlayScreenState extends State<SessionPlayScreen> {
     final completedSession = await sessionService.endSession(
       finalMetrics: finalMetrics,
       audioPath: _recordingPath,
+      processedAudioBase64: _processedAudioBase64,
+      processedAudioFormat: _processedAudioFormat,
     );
 
     if (completedSession != null) {

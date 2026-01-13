@@ -213,6 +213,195 @@ class VoiceBridgeService {
     };
     return languages[code] ?? 'English';
   }
+
+  // ========== STATIC METHODS FOR BACKEND SERVER ==========
+  
+  /// Base URL for backend server
+  /// Change this to your Hugging Face Space URL after deployment:
+  /// Example: 'https://YOUR_USERNAME-denuel-voice-bridge.hf.space'
+  static String _backendBaseUrl = 'http://localhost:5000';
+  
+  /// Storage for last processed audio
+  static String? _lastProcessedAudioBase64;
+
+  /// Configure the backend URL (call this on app startup)
+  static void setBackendUrl(String url) {
+    _backendBaseUrl = url;
+  }
+
+  /// Get current backend URL
+  static String get backendUrl => _backendBaseUrl;
+
+  /// Check if server is running (local or Hugging Face)
+  static Future<bool> isServerRunning() async {
+    try {
+      // For local server
+      if (_backendBaseUrl.contains('localhost')) {
+        final response = await http.get(Uri.parse('$_backendBaseUrl/health'))
+            .timeout(const Duration(seconds: 3));
+        return response.statusCode == 200;
+      }
+      
+      // For Hugging Face Space - just check if URL is reachable
+      final response = await http.get(Uri.parse(_backendBaseUrl))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Process audio through backend server
+  static Future<Map<String, dynamic>> processAudio(String base64Audio, String format) async {
+    try {
+      // For local Flask server
+      if (_backendBaseUrl.contains('localhost')) {
+        final response = await http.post(
+          Uri.parse('$_backendBaseUrl/process-audio'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'audio_base64': base64Audio,
+            'format': format,
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body) as Map<String, dynamic>;
+        } else {
+          throw Exception('Server error: ${response.statusCode}');
+        }
+      }
+      
+      // For Hugging Face Space - use Gradio API
+      final response = await http.post(
+        Uri.parse('$_backendBaseUrl/api/predict'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'fn_index': 0,  // process_audio function
+          'data': [base64Audio, format],
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        if (result['data'] != null && result['data'].isNotEmpty) {
+          return result['data'][0] as Map<String, dynamic>;
+        }
+        throw Exception('Empty response from server');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Process audio error: $e');
+    }
+  }
+
+  /// Synthesize text to speech
+  static Future<Map<String, dynamic>> synthesizeSpeech(String text, {String language = 'en', String? voiceBase64}) async {
+    try {
+      // For local Flask server
+      if (_backendBaseUrl.contains('localhost')) {
+        final response = await http.post(
+          Uri.parse('$_backendBaseUrl/process-text'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'text': text,
+            'language': language,
+            'voice_base64': voiceBase64,
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body) as Map<String, dynamic>;
+        } else {
+          throw Exception('Server error: ${response.statusCode}');
+        }
+      }
+      
+      // For Hugging Face Space
+      final response = await http.post(
+        Uri.parse('$_backendBaseUrl/api/predict'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'fn_index': 1,  // synthesize function
+          'data': [text, language, voiceBase64 ?? ''],
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        if (result['data'] != null && result['data'].isNotEmpty) {
+          return result['data'][0] as Map<String, dynamic>;
+        }
+        throw Exception('Empty response from server');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Synthesize error: $e');
+    }
+  }
+
+  /// Store last processed audio for quick playback
+  static void setLastProcessedAudioBase64(String? value) {
+    _lastProcessedAudioBase64 = value;
+  }
+
+  /// Get last processed audio
+  static String? getLastProcessedAudioBase64() {
+    return _lastProcessedAudioBase64;
+  }
+
+  /// Analyze pronunciation and get feedback
+  /// Returns metrics, phoneme errors, and suggestions
+  static Future<Map<String, dynamic>> analyzePronunciation(
+    String base64Audio,
+    String format, {
+    String? targetText,
+  }) async {
+    try {
+      // For local Flask server
+      if (_backendBaseUrl.contains('localhost')) {
+        final response = await http.post(
+          Uri.parse('$_backendBaseUrl/analyze-pronunciation'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'audio_base64': base64Audio,
+            'audio_format': format,
+            'target_text': targetText ?? '',
+          }),
+        ).timeout(const Duration(seconds: 30));
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body) as Map<String, dynamic>;
+        } else {
+          throw Exception('Server error: ${response.statusCode}');
+        }
+      }
+      
+      // For Hugging Face Space - use Gradio API
+      final response = await http.post(
+        Uri.parse('$_backendBaseUrl/api/predict'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'fn_index': 4, // analyze_pronunciation function
+          'data': [base64Audio, format, targetText ?? ''],
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        if (result['data'] != null && result['data'].isNotEmpty) {
+          return result['data'][0] as Map<String, dynamic>;
+        }
+        throw Exception('Empty response from server');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Pronunciation analysis error: $e');
+    }
+  }
 }
 
 /// Result from voice cloning operation

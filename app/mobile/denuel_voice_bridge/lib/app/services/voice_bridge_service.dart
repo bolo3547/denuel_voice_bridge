@@ -174,6 +174,25 @@ class VoiceBridgeService {
     final audio = html.AudioElement(dataUrl);
     audio.play();
   }
+
+  /// In-memory last processed audio (base64). Useful for quick playback when
+  /// not persisted to a session (web-friendly). Use setLastProcessedAudio/getLastProcessedAudio.
+  static String? _lastProcessedAudioBase64;
+
+  // Keep a reference to the last created web AudioElement when we control playback
+  static dynamic _lastWebAudio;
+
+  static void setLastProcessedAudioBase64(String? base64) {
+    _lastProcessedAudioBase64 = base64;
+  }
+
+  static String? getLastProcessedAudioBase64() => _lastProcessedAudioBase64;
+
+  static void setLastWebAudio(dynamic audio) {
+    _lastWebAudio = audio;
+  }
+
+  static dynamic getLastWebAudio() => _lastWebAudio;
   
   /// Internal fetch helper for web
   static Future<String> _fetch(String url, String method, String? body) async {

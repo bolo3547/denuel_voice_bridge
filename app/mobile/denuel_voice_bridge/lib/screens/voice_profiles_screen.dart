@@ -206,7 +206,7 @@ class _VoiceProfilesScreenState extends State<VoiceProfilesScreen> {
               title: Text('Set as default', style: AppTextStyles.bodyLarge),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Set as default
+                _setAsDefault(profile);
               },
             ),
             ListTile(
@@ -214,7 +214,7 @@ class _VoiceProfilesScreenState extends State<VoiceProfilesScreen> {
               title: Text('Edit name', style: AppTextStyles.bodyLarge),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Edit name
+                _showEditNameDialog(profile);
               },
             ),
             ListTile(
@@ -226,7 +226,7 @@ class _VoiceProfilesScreenState extends State<VoiceProfilesScreen> {
                   )),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Confirm and remove
+                _showDeleteConfirmation(profile);
               },
             ),
           ],
@@ -244,6 +244,117 @@ class _VoiceProfilesScreenState extends State<VoiceProfilesScreen> {
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
+      ),
+    );
+  }
+
+  void _setAsDefault(VoiceProfile profile) {
+    setState(() {
+      for (int i = 0; i < _profiles.length; i++) {
+        _profiles[i] = VoiceProfile(
+          id: _profiles[i].id,
+          name: _profiles[i].name,
+          subtitle: _profiles[i].subtitle,
+          isDefault: _profiles[i].id == profile.id,
+          createdAt: _profiles[i].createdAt,
+        );
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${profile.name} set as default')),
+    );
+  }
+
+  void _showEditNameDialog(VoiceProfile profile) {
+    final controller = TextEditingController(text: profile.name);
+    final subtitleController = TextEditingController(text: profile.subtitle);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Profile'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                hintText: 'Enter profile name',
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: subtitleController,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                hintText: 'e.g., My Voice',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.isNotEmpty) {
+                setState(() {
+                  final index = _profiles.indexWhere((p) => p.id == profile.id);
+                  if (index != -1) {
+                    _profiles[index] = VoiceProfile(
+                      id: profile.id,
+                      name: controller.text,
+                      subtitle: subtitleController.text.isEmpty 
+                          ? profile.subtitle 
+                          : subtitleController.text,
+                      isDefault: profile.isDefault,
+                      createdAt: profile.createdAt,
+                    );
+                  }
+                });
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(VoiceProfile profile) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Profile?'),
+        content: Text(
+          'Are you sure you want to remove "${profile.name}"? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.attention,
+            ),
+            onPressed: () {
+              setState(() {
+                _profiles.removeWhere((p) => p.id == profile.id);
+              });
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${profile.name} removed')),
+              );
+            },
+            child: const Text('Remove'),
+          ),
+        ],
       ),
     );
   }
